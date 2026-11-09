@@ -42,6 +42,8 @@ Office Viewer 内置完整的 Git 历史工作区，让你无需离开 VS Code �
 
 在编辑器中右键，可将 Markdown 导出为 PDF、DOCX 或 HTML。PDF 导出依赖 Chromium，可通过 `vscode-office.chromiumPath` 配置浏览器路径。
 
+Markdown 设置面板的 **CodeMirror** 区域提供代码块懒加载开关和预加载范围。默认开启懒加载，预加载范围为 `400px`；可以输入 `0–10000px` 的数字调整范围。关闭后所有普通代码块会立即预渲染，滚动时不再按视口创建或卸载 CodeMirror。
+
 ![导出 Markdown](image/README-CN/1685418034035.png)
 
 快捷键：基于 [shortcut.md](shortcut.md)，以及：

@@ -8,7 +8,8 @@ handler.on("open", async (md) => {
   window.__officeMarkdownFileName = fileName || 'Note';
   const {
     language, isWeb, isDev, markdown,
-    editMode, editorTheme, codeMirrorTheme, mermaidTheme
+    editMode, editorTheme, codeMirrorTheme, mermaidTheme,
+    codeBlockLazyLoad, codeBlockPreloadPx
   } = config;
   if (isWeb) {
     document.body.classList.add('is-web')
@@ -32,6 +33,8 @@ handler.on("open", async (md) => {
     editorTheme,
     codeMirrorTheme,
     mermaidTheme,
+    codeBlockLazyLoad: codeBlockLazyLoad !== false,
+    codeBlockPreloadPx: Number.isFinite(Number(codeBlockPreloadPx)) ? Number(codeBlockPreloadPx) : 400,
     lang: mapVscodeLanguageToVditorLang(language),
     tab: '\t',
     toolbar: await getToolbar(rootPath, () => {
@@ -39,8 +42,9 @@ handler.on("open", async (md) => {
       editor?.markSaved();
     }),
     onAboutOpen: () => handler.emit('openAbout'),
-    onSponsorLogoClick: () => handler.emit('openSponsor'),
-    onSponsorSiteClick: () => handler.emit('openExternal', 'https://database-client.com/'),
+    onCodeBlockLazySettingsChange(settings) {
+      handler.emit('updateCodeBlockLazySettings', settings)
+    },
     onLinkClick(payload, event) {
       const isCompose = event.metaKey || event.ctrlKey;
       if (payload.action !== "dblclick" && !(payload.action === "click" && isCompose)) {
@@ -151,6 +155,9 @@ handler.on("open", async (md) => {
         if (update.editMode !== undefined) {
           editor.switchEditMode(update.editMode);
         }
+      });
+      handler.on('codeBlockLazySettings', (settings) => {
+        editor.applyCodeBlockLazySettings(settings);
       });
       handler.on("update", content => {
         if (document.querySelector("[data-type='yaml-front-matter'].vditor-code-block--cm .cm-editor.cm-focused")) {

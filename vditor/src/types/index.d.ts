@@ -397,6 +397,13 @@ interface ILinkClickPayload {
     element: HTMLElement;
 }
 
+interface ICodeBlockLazySettings {
+    /** 是否启用普通代码块视口懒加载。默认值: true */
+    enabled: boolean;
+    /** 视口上下预加载范围，单位 px。默认值: 400 */
+    preloadPx: number;
+}
+
 /** @link https://ld246.com/article/1549638745630#options-preview-markdown */
 interface IMarkdownConfig {
     /** 自动空格。默认值: false */
@@ -564,6 +571,10 @@ interface IOptions {
     mermaidTheme?: IMermaidTheme | string;
     /** 阻止 macOS Option 键输入特殊符号。默认值: true */
     preventMacOptionKey?: boolean;
+    /** 普通代码块是否启用视口懒加载。默认值: true */
+    codeBlockLazyLoad?: boolean;
+    /** 普通代码块视口上下预加载范围，单位 px。默认值: 400 */
+    codeBlockPreloadPx?: number;
     /** 图标。默认值: 'ant' */
     icon?: "ant" | "material";
     /** @link https://ld246.com/article/1549638745630#options-upload */
@@ -627,17 +638,14 @@ interface IOptions {
     /** Ctrl/⌘+单击、双击或中键打开链接时触发；未配置则使用浏览器默认行为 */
     onLinkClick?(payload: ILinkClickPayload, event: MouseEvent, vditor: IVditor): void;
 
-    /** 点击赞助 Logo 后触发 */
-    onSponsorLogoClick?(): void;
-
-    /** 点击赞助站点后触发 */
-    onSponsorSiteClick?(): void;
-
     /** 遥测事件回调；配置后 vditor 内部通过 telemetry() 上报 */
     onTelemetry?(event: string, properties?: Record<string, string | number | boolean>): void;
 
     /** 全局设置变更后触发（仅在配置文件同步启用时） */
     onSettingsChange?(settings: ViewerSettingsExport): void;
+
+    /** 代码块懒加载设置变更后触发 */
+    onCodeBlockLazySettingsChange?(settings: ICodeBlockLazySettings): void;
 
     /** 点击编辑配置文件按钮时触发 */
     onEditSettings?(): void;

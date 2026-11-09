@@ -32,8 +32,15 @@ import {
     AIModel,
 } from "../util/globalLocalStorageSettings";
 import { getCodeFontFamilyOptions } from "../util/fontFamilyOptions";
+import {
+    DEFAULT_CODE_BLOCK_LAZY_LOAD,
+    DEFAULT_CODE_BLOCK_PRELOAD_PX,
+    MAX_CODE_BLOCK_PRELOAD_PX,
+    normalizeCodeBlockLazySettings,
+} from "../codeBlock/codeMirrorManager";
 
 export const SETTINGS_PANEL_CLASS = "vditor-settings-panel";
+export const CODE_BLOCK_LAZY_LOAD_KEY = "codeBlockLazyLoad";
 
 const EDIT_MODES = [
     { id: "wysiwyg", label: "Visual" },
@@ -77,6 +84,18 @@ const buildLineHeightStepperHTML = (value: number) =>
             <button type="button" class="${SETTINGS_PANEL_CLASS}__stepper-btn" data-lh-step="-0.1">−</button>
             <input type="text" class="${SETTINGS_PANEL_CLASS}__stepper-input" data-lh-value value="${value.toFixed(1)}">
             <button type="button" class="${SETTINGS_PANEL_CLASS}__stepper-btn" data-lh-step="0.1">+</button>
+        </div>
+    </div>`;
+
+const buildCodeBlockPreloadHTML = (enabled: boolean, value: number) =>
+    `<div class="${SETTINGS_PANEL_CLASS}__stepper-row" data-code-block-preload-row>
+        <span class="${SETTINGS_PANEL_CLASS}__stepper-label">${window.VditorI18n.codeBlockPreloadRange ?? "Preload Range"}</span>
+        <div class="${SETTINGS_PANEL_CLASS}__stepper">
+            <button type="button" class="${SETTINGS_PANEL_CLASS}__stepper-btn" data-code-block-preload-step="-50"${enabled ? "" : " disabled"}>−</button>
+            <input type="number" class="${SETTINGS_PANEL_CLASS}__stepper-input" data-code-block-preload-value
+                value="${value}" min="0" max="${MAX_CODE_BLOCK_PRELOAD_PX}" step="50" inputmode="numeric"${enabled ? "" : " disabled"}>
+            <span class="${SETTINGS_PANEL_CLASS}__stepper-unit">px</span>
+            <button type="button" class="${SETTINGS_PANEL_CLASS}__stepper-btn" data-code-block-preload-step="50"${enabled ? "" : " disabled"}>+</button>
         </div>
     </div>`;
 
@@ -297,6 +316,10 @@ export const buildSettingsPanelHTML = (vditor: IVditor) => {
     const imgMaxHeight = getGlobalLocalStorageSetting<number>(IMAGE_MAX_HEIGHT_KEY, IMAGE_MAX_HEIGHT_DEFAULT);
     const codeBlockMaxHeight = getGlobalLocalStorageSetting<string>(CODE_BLOCK_MAX_HEIGHT_KEY, CODE_BLOCK_MAX_HEIGHT_DEFAULT) ?? CODE_BLOCK_MAX_HEIGHT_DEFAULT;
     const typewriterMode = getGlobalLocalStorageSetting<boolean>(TYPEWRITER_MODE_KEY, false) === true;
+    const codeBlockLazySettings = normalizeCodeBlockLazySettings({
+        enabled: vditor.options.codeBlockLazyLoad ?? DEFAULT_CODE_BLOCK_LAZY_LOAD,
+        preloadPx: vditor.options.codeBlockPreloadPx ?? DEFAULT_CODE_BLOCK_PRELOAD_PX,
+    });
     return `<div class="${SETTINGS_PANEL_CLASS}">
         <div class="${SETTINGS_PANEL_CLASS}__section">
             <div class="${SETTINGS_PANEL_CLASS}__title">Edit Mode</div>
@@ -324,6 +347,8 @@ export const buildSettingsPanelHTML = (vditor: IVditor) => {
             <div class="${SETTINGS_PANEL_CLASS}__group">
                 ${buildDropdownHTML(CODE_FONT_FAMILY_KEY, "Font", getCodeFontFamilyOptions(), codeFontFamily)}
                 ${buildDropdownHTML(CODE_BLOCK_MAX_HEIGHT_KEY, i18n.codeBlockHeight, CODE_BLOCK_MAX_HEIGHT_OPTIONS, codeBlockMaxHeight)}
+                ${buildToggleHTML(CODE_BLOCK_LAZY_LOAD_KEY, i18n.codeBlockLazyLoad ?? "Lazy Load Code Blocks", codeBlockLazySettings.enabled)}
+                ${buildCodeBlockPreloadHTML(codeBlockLazySettings.enabled, codeBlockLazySettings.preloadPx)}
             </div>
         </div>
         <div class="${SETTINGS_PANEL_CLASS}__section">

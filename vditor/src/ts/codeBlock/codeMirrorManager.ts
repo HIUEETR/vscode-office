@@ -43,18 +43,38 @@ export const CM_EDITING_CLASS = "vditor-cm-block--editing";
 export const CM_SPLIT_CLASS = "vditor-cm-block--split";
 const CM_BLOCK_DATA_TYPES = new Set(["code-block", "math-block"]);
 const SPECIAL_LANGUAGES = ["mermaid", "plantuml", "math"];
-/** 视口内同时挂载 CodeMirror 的上限（参考 Milkdown 25 块文档 <15 个 CM 实例） */
-const LAZY_CM_MAX_MOUNTED = 15;
-/** 视口外扩范围，与 Milkdown 一致 */
-const LAZY_CM_VIEWPORT_MARGIN = 200;
+export const DEFAULT_CODE_BLOCK_LAZY_LOAD = true;
+export const DEFAULT_CODE_BLOCK_PRELOAD_PX = 400;
+export const MAX_CODE_BLOCK_PRELOAD_PX = 10000;
 /** 滚出视口后延迟卸载 CodeMirror，避免快速滚动时反复创建/销毁 */
 const LAZY_CM_TEARDOWN_DELAY = 5000;
 const CM_PLACEHOLDER_CLASS = "vditor-code-block-placeholder";
 
 let lazyCodeMirrorObserver: IntersectionObserver | null = null;
+let lazyCodeMirrorObserverMargin: number | null = null;
+let lazyCodeMirrorObserverRoot: Element | null = null;
 const lazyVisibilityCallbacks = new WeakMap<HTMLElement, (isIntersecting: boolean) => void>();
 const lazyTeardownTimers = new WeakMap<HTMLElement, number>();
 const lazyPendingTeardownBlocks = new Set<HTMLElement>();
+
+export const normalizeCodeBlockLazySettings = (
+    settings?: Partial<ICodeBlockLazySettings> | null,
+): ICodeBlockLazySettings => {
+    const parsedPreloadPx = Number(settings?.preloadPx);
+    const preloadPx = Number.isFinite(parsedPreloadPx)
+        ? Math.min(MAX_CODE_BLOCK_PRELOAD_PX, Math.max(0, Math.round(parsedPreloadPx)))
+        : DEFAULT_CODE_BLOCK_PRELOAD_PX;
+    return {
+        enabled: settings?.enabled !== false,
+        preloadPx,
+    };
+};
+
+const getCodeBlockLazySettings = (vditor: IVditor): ICodeBlockLazySettings =>
+    normalizeCodeBlockLazySettings({
+        enabled: vditor.options.codeBlockLazyLoad,
+        preloadPx: vditor.options.codeBlockPreloadPx,
+    });
 
 interface CodeMirrorBinding {
     view: EditorView;
@@ -265,12 +285,23 @@ const getBlockParts = (blockElement: HTMLElement) => {
 
 const getModeEditor = (vditor: IVditor) => {
     if (vditor.currentMode === "wysiwyg") {
-        return vditor.wysiwyg.element;
+        return vditor.wysiwyg?.element;
     }
     if (vditor.currentMode === "ir") {
-        return vditor.ir.element;
+        return vditor.ir?.element;
     }
     return null;
+};
+
+const getCodeBlockScrollRoot = (vditor: IVditor): HTMLElement | null => {
+    const editor = getModeEditor(vditor);
+    if (!editor) {
+        return null;
+    }
+    if (editor.classList.contains("vditor-reset")) {
+        return editor;
+    }
+    return editor.querySelector<HTMLElement>(".vditor-reset") ?? editor;
 };
 
 const getCmBlockSelector = (mode: string) => {
@@ -283,9 +314,16 @@ const getCmBlockSelector = (mode: string) => {
 /** @deprecated use getCmBlockSelector */
 const getCodeBlockSelector = getCmBlockSelector;
 
-const isBlockNearViewport = (blockElement: HTMLElement, margin = LAZY_CM_VIEWPORT_MARGIN) => {
+const isBlockNearViewport = (
+    blockElement: HTMLElement,
+    margin = DEFAULT_CODE_BLOCK_PRELOAD_PX,
+    rootElement: HTMLElement | null = null,
+) => {
     const rect = blockElement.getBoundingClientRect();
-    return rect.bottom >= -margin && rect.top <= window.innerHeight + margin;
+    const rootRect = rootElement?.getBoundingClientRect();
+    const viewportTop = rootRect && rootRect.height > 0 ? rootRect.top : 0;
+    const viewportBottom = rootRect && rootRect.height > 0 ? rootRect.bottom : window.innerHeight;
+    return rect.bottom >= viewportTop - margin && rect.top <= viewportBottom + margin;
 };
 
 /** 仅普通代码块走视口懒加载；数学 / mermaid / plantuml 不受影响 */
@@ -385,14 +423,13 @@ const handleLazyCodeBlockVisibility = (
     blockElement: HTMLElement,
     isIntersecting: boolean,
 ) => {
-    if (!isLazyManagedCodeBlock(blockElement)) {
+    if (!isLazyManagedCodeBlock(blockElement) || !getCodeBlockLazySettings(vditor).enabled) {
         return;
     }
     if (isIntersecting) {
         cancelLazyTeardown(blockElement);
         blockElement.classList.remove(CM_PLACEHOLDER_CLASS);
         if (!bindings.has(blockElement)) {
-            enforceMaxMounted(vditor, blockElement);
             mountCodeMirror(blockElement, vditor, true);
         }
         return;
@@ -434,51 +471,6 @@ const destroyCodeMirror = (blockElement: HTMLElement) => {
     }
 };
 
-const getMountedCodeBlocks = (vditor: IVditor) => {
-    const editor = getModeEditor(vditor);
-    if (!editor) {
-        return [] as HTMLElement[];
-    }
-    const mounted: HTMLElement[] = [];
-    for (const block of editor.querySelectorAll(getCodeBlockSelector(vditor.currentMode))) {
-        const blockElement = block as HTMLElement;
-        if (bindings.has(blockElement) && isLazyManagedCodeBlock(blockElement)) {
-            mounted.push(blockElement);
-        }
-    }
-    return mounted;
-};
-
-const enforceMaxMounted = (vditor: IVditor, keepBlock: HTMLElement) => {
-    const mounted = getMountedCodeBlocks(vditor).filter((block) => block !== keepBlock);
-    while (mounted.length >= LAZY_CM_MAX_MOUNTED) {
-        let furthest: HTMLElement | null = null;
-        let maxDistance = -1;
-        const viewportCenter = window.innerHeight / 2;
-        for (const block of mounted) {
-            if (!isLazyManagedCodeBlock(block)) {
-                continue;
-            }
-            const binding = bindings.get(block);
-            if (binding?.view.hasFocus) {
-                continue;
-            }
-            const rect = block.getBoundingClientRect();
-            const blockCenter = rect.top + rect.height / 2;
-            const distance = Math.abs(blockCenter - viewportCenter);
-            if (distance > maxDistance) {
-                maxDistance = distance;
-                furthest = block;
-            }
-        }
-        if (!furthest) {
-            break;
-        }
-        destroyCodeMirror(furthest);
-        mounted.splice(mounted.indexOf(furthest), 1);
-    }
-};
-
 const scheduleSpecialBlock = (vditor: IVditor, blockElement: HTMLElement) => {
     if (isMathBlockElement(blockElement)) {
         syncMathBlockDisplayMode(vditor, blockElement);
@@ -496,8 +488,11 @@ const scheduleLazyCodeBlock = (vditor: IVditor, blockElement: HTMLElement) => {
         scheduleSpecialBlock(vditor, blockElement);
         return;
     }
-    if (isBlockNearViewport(blockElement)) {
-        enforceMaxMounted(vditor, blockElement);
+    const settings = getCodeBlockLazySettings(vditor);
+    const scrollRoot = getCodeBlockScrollRoot(vditor);
+    if (!settings.enabled || isBlockNearViewport(blockElement, settings.preloadPx, scrollRoot)) {
+        cancelLazyTeardown(blockElement);
+        blockElement.classList.remove(CM_PLACEHOLDER_CLASS);
         mountCodeMirror(blockElement, vditor, true);
     } else {
         if (bindings.has(blockElement)) {
@@ -506,13 +501,28 @@ const scheduleLazyCodeBlock = (vditor: IVditor, blockElement: HTMLElement) => {
         }
         showPlainCodeBlockPlaceholder(blockElement);
     }
-    registerLazyCodeBlockVisibility(vditor, blockElement);
+    if (settings.enabled) {
+        registerLazyCodeBlockVisibility(vditor, blockElement);
+    }
 };
 
-export const setupLazyCodeMirrorObserver = (_vditor: IVditor) => {
-    if (lazyCodeMirrorObserver) {
+export const setupLazyCodeMirrorObserver = (vditor: IVditor) => {
+    const settings = getCodeBlockLazySettings(vditor);
+    if (!settings.enabled) {
         return;
     }
+    const scrollRoot = getCodeBlockScrollRoot(vditor);
+    if (!scrollRoot) {
+        return;
+    }
+    if (
+        lazyCodeMirrorObserver
+        && lazyCodeMirrorObserverMargin === settings.preloadPx
+        && lazyCodeMirrorObserverRoot === scrollRoot
+    ) {
+        return;
+    }
+    lazyCodeMirrorObserver?.disconnect();
     lazyCodeMirrorObserver = new IntersectionObserver((entries) => {
         for (const entry of entries) {
             const blockElement = entry.target as HTMLElement;
@@ -520,10 +530,12 @@ export const setupLazyCodeMirrorObserver = (_vditor: IVditor) => {
             callback?.(entry.isIntersecting);
         }
     }, {
-        root: null,
-        rootMargin: `${LAZY_CM_VIEWPORT_MARGIN}px 0px`,
+        root: scrollRoot,
+        rootMargin: `${settings.preloadPx}px 0px`,
         threshold: 0,
     });
+    lazyCodeMirrorObserverMargin = settings.preloadPx;
+    lazyCodeMirrorObserverRoot = scrollRoot;
 };
 
 /** 普通代码块只保留隐藏的 sync code + CodeMirror；特殊块编辑时保留 preview 并上下分层显示 */
@@ -1660,6 +1672,35 @@ export const renderCodeBlocks = (vditor: IVditor) => {
     syncMathBlocksDisplayMode(editor, vditor);
 };
 
+const clearPendingLazyTeardowns = () => {
+    for (const blockElement of Array.from(lazyPendingTeardownBlocks)) {
+        cancelLazyTeardown(blockElement);
+    }
+};
+
+export const applyCodeBlockLazySettings = (vditor: IVditor) => {
+    const settings = getCodeBlockLazySettings(vditor);
+    if (!settings.enabled) {
+        lazyCodeMirrorObserver?.disconnect();
+        lazyCodeMirrorObserver = null;
+        lazyCodeMirrorObserverMargin = null;
+        lazyCodeMirrorObserverRoot = null;
+        clearPendingLazyTeardowns();
+    } else if (
+        lazyCodeMirrorObserver
+        && (
+            lazyCodeMirrorObserverMargin !== settings.preloadPx
+            || lazyCodeMirrorObserverRoot !== getCodeBlockScrollRoot(vditor)
+        )
+    ) {
+        lazyCodeMirrorObserver.disconnect();
+        lazyCodeMirrorObserver = null;
+        lazyCodeMirrorObserverMargin = null;
+        lazyCodeMirrorObserverRoot = null;
+    }
+    preserveEditorScroll(vditor, () => renderCodeBlocks(vditor));
+};
+
 /** @deprecated use renderCodeBlocks */
 export const renderWysiwygCodeBlocks = renderCodeBlocks;
 
@@ -1701,9 +1742,6 @@ export const focusCodeMirror = (
         return;
     }
     if (!bindings.get(blockElement) && vditor) {
-        if (isLazyManagedCodeBlock(blockElement)) {
-            enforceMaxMounted(vditor, blockElement);
-        }
         mountCodeMirror(blockElement, vditor, true);
     }
     const binding = bindings.get(blockElement);

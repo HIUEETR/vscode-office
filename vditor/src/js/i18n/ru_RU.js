@@ -1,5 +1,7 @@
 window.VditorI18n = {
   'codeBlockHeight': 'Максимальная высота',
+  'codeBlockLazyLoad': 'Ленивая загрузка блоков кода',
+  'codeBlockPreloadRange': 'Диапазон предзагрузки',
   'expandCode': 'Развернуть',
   'collapseCode': 'Свернуть',
   'alignCenter': 'Выровнять по центру',

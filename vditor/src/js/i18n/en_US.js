@@ -1,5 +1,7 @@
 window.VditorI18n = {
   'codeBlockHeight': 'Maximum Height',
+  'codeBlockLazyLoad': 'Lazy Load Code Blocks',
+  'codeBlockPreloadRange': 'Preload Range',
   'expandCode': 'Expand',
   'collapseCode': 'Collapse',
   'alignCenter': 'Center',

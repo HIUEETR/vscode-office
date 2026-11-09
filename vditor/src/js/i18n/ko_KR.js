@@ -1,5 +1,7 @@
 window.VditorI18n = {
   'codeBlockHeight': '최대 높이',
+  'codeBlockLazyLoad': '코드 블록 지연 로드',
+  'codeBlockPreloadRange': '미리 로드 범위',
   'expandCode': '펼치기',
   'collapseCode': '접기',
   'alignCenter': '가운데',

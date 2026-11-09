@@ -42,6 +42,8 @@ To use the built-in VS Code Markdown editor instead, add this to your `settings.
 
 Right-click in the editor to export Markdown to PDF, DOCX, or HTML. PDF export requires Chromium; set the browser path with `vscode-office.chromiumPath`.
 
+The **CodeMirror** section in the Markdown settings panel includes a lazy-loading toggle and a preload range. Lazy loading is enabled by default with a `400px` preload range; enter a value from `0–10000px` to adjust it. Disabling the option pre-renders all regular code blocks and stops CodeMirror from being created or removed while scrolling.
+
 ![Export Markdown](image/README-CN/1685418034035.png)
 
 Shortcuts: Based on [shortcut.md](shortcut.md), plus:

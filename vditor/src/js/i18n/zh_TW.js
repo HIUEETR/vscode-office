@@ -1,5 +1,7 @@
 window.VditorI18n = {
   'codeBlockHeight': '最大高度',
+  'codeBlockLazyLoad': '程式碼區塊延遲載入',
+  'codeBlockPreloadRange': '預載範圍',
   'expandCode': '展開',
   'collapseCode': '收合',
   'alignCenter': '置中',

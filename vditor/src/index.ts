@@ -2,7 +2,12 @@ import "./assets/less/index.less";
 import * as adapterRender from "./ts/markdown/adapterRender";
 import { codeRender } from "./ts/markdown/codeRender";
 import { codeMirrorPreviewRender } from "./ts/codeBlock/codeMirrorPreviewRender";
-import { deactivateCodeMirrorsInScope, renderCodeBlocks } from "./ts/codeBlock/codeMirrorManager";
+import {
+    applyCodeBlockLazySettings as applyCodeBlockLazyLoading,
+    deactivateCodeMirrorsInScope,
+    normalizeCodeBlockLazySettings,
+    renderCodeBlocks,
+} from "./ts/codeBlock/codeMirrorManager";
 import { mathRender } from "./ts/markdown/mathRender";
 import { mermaidRender } from "./ts/markdown/mermaidRender";
 import { outlineRender } from "./ts/markdown/outlineRender";
@@ -461,6 +466,20 @@ class Vditor {
         }
         refreshSettingsToolbarPanel(this.vditor);
         refreshAISettingsToolbarPanel(this.vditor);
+    }
+
+    /** 应用普通代码块懒加载设置并立即刷新当前文档 */
+    public applyCodeBlockLazySettings(settings: ICodeBlockLazySettings) {
+        const normalized = normalizeCodeBlockLazySettings(settings);
+        this.vditor.options.codeBlockLazyLoad = normalized.enabled;
+        this.vditor.options.codeBlockPreloadPx = normalized.preloadPx;
+        applyCodeBlockLazyLoading(this.vditor);
+        const settingsItem = this.vditor.toolbar.elements.settings;
+        const panelElement = settingsItem?.querySelector(".vditor-hint") as HTMLElement | null;
+        if (panelElement) {
+            panelElement.innerHTML = buildSettingsPanelHTML(this.vditor);
+        }
+        refreshSettingsToolbarPanel(this.vditor);
     }
 
     /** 打开 AI 润色弹窗，由外部（右键菜单等）调用 */

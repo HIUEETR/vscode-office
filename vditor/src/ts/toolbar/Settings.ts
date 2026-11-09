@@ -1,5 +1,6 @@
 import {
     buildSettingsPanelHTML,
+    CODE_BLOCK_LAZY_LOAD_KEY,
     refreshSettingsPanel,
     SETTINGS_PANEL_CLASS,
 } from "../ui/settingsPanel";
@@ -47,6 +48,12 @@ import {
     TYPEWRITER_MODE_KEY,
 } from "../util/globalLocalStorageSettings";
 import {getCodeFontFamilyOptions} from "../util/fontFamilyOptions";
+import {
+    applyCodeBlockLazySettings,
+    DEFAULT_CODE_BLOCK_LAZY_LOAD,
+    DEFAULT_CODE_BLOCK_PRELOAD_PX,
+    normalizeCodeBlockLazySettings,
+} from "../codeBlock/codeMirrorManager";
 
 const DROPDOWN_OPTIONS_MAP: Record<string, readonly { label: string; value: string }[] | (() => { label: string; value: string }[])> = {
     [FONT_FAMILY_KEY]: FONT_FAMILY_OPTIONS,
@@ -78,6 +85,26 @@ const parsePxValue = (value: string): number | undefined => {
     }
     const parsed = Number(match[1]);
     return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const getCodeBlockSettings = (vditor: IVditor) => normalizeCodeBlockLazySettings({
+    enabled: vditor.options.codeBlockLazyLoad ?? DEFAULT_CODE_BLOCK_LAZY_LOAD,
+    preloadPx: vditor.options.codeBlockPreloadPx ?? DEFAULT_CODE_BLOCK_PRELOAD_PX,
+});
+
+const applyCodeBlockSettings = (
+    vditor: IVditor,
+    settings: Partial<ICodeBlockLazySettings>,
+) => {
+    const next = normalizeCodeBlockLazySettings({
+        ...getCodeBlockSettings(vditor),
+        ...settings,
+    });
+    vditor.options.codeBlockLazyLoad = next.enabled;
+    vditor.options.codeBlockPreloadPx = next.preloadPx;
+    applyCodeBlockLazySettings(vditor);
+    vditor.options.onCodeBlockLazySettingsChange?.(next);
+    return next;
 };
 
 const resolveCurrentFontSize = (vditor: IVditor, isUI: boolean, fallback: number): number => {
@@ -225,6 +252,22 @@ export class Settings extends MenuItem {
                 return;
             }
 
+            // Code block preload range stepper
+            const preloadStepBtn = event.target.closest("button[data-code-block-preload-step]") as HTMLElement | null;
+            if (preloadStepBtn) {
+                const row = preloadStepBtn.closest("[data-code-block-preload-row]") as HTMLElement | null;
+                const input = row?.querySelector<HTMLInputElement>("[data-code-block-preload-value]");
+                const current = getCodeBlockSettings(vditor);
+                const step = parseInt(preloadStepBtn.getAttribute("data-code-block-preload-step") || "0", 10);
+                const next = applyCodeBlockSettings(vditor, {
+                    preloadPx: current.preloadPx + step,
+                });
+                if (input) input.value = String(next.preloadPx);
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+
             // Line height stepper
             const lhBtn = event.target.closest("button[data-lh-step]") as HTMLElement | null;
             if (lhBtn) {
@@ -249,6 +292,17 @@ export class Settings extends MenuItem {
                 const next = !toggleTrigger.classList.contains(`${SETTINGS_PANEL_CLASS}__toggle--on`);
                 toggleTrigger.classList.toggle(`${SETTINGS_PANEL_CLASS}__toggle--on`, next);
                 toggleTrigger.setAttribute("aria-checked", String(next));
+                if (key === CODE_BLOCK_LAZY_LOAD_KEY) {
+                    const settings = applyCodeBlockSettings(vditor, { enabled: next });
+                    const row = panelElement.querySelector("[data-code-block-preload-row]") as HTMLElement | null;
+                    row?.querySelectorAll<HTMLButtonElement | HTMLInputElement>("[data-code-block-preload-step], [data-code-block-preload-value]")
+                        .forEach((element) => {
+                            element.disabled = !settings.enabled;
+                        });
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
                 setGlobalLocalStorageSetting(key, next ? true : undefined);
                 if (key === TYPEWRITER_MODE_KEY) {
                     applyTypewriterModeClass(vditor.element, next);
@@ -312,6 +366,10 @@ export class Settings extends MenuItem {
             // Reset settings
             if (event.target.closest("[data-reset-settings]")) {
                 resetGlobalSettings();
+                applyCodeBlockSettings(vditor, {
+                    enabled: DEFAULT_CODE_BLOCK_LAZY_LOAD,
+                    preloadPx: DEFAULT_CODE_BLOCK_PRELOAD_PX,
+                });
                 for (const prop of ["--ui-font-size", "--editor-font-size", "--editor-line-height", "--editor-font-family", "--code-font-family", "--bold-color", "--vditor-page-width", "--vditor-image-max-width", "--vditor-image-max-height"]) {
                     vditor.element.style.removeProperty(prop);
                 }
@@ -327,6 +385,16 @@ export class Settings extends MenuItem {
         // Line height manual input
         panelElement.addEventListener("change", (event: Event) => {
             const input = event.target as HTMLInputElement;
+            if (input.dataset.codeBlockPreloadValue !== undefined) {
+                const current = getCodeBlockSettings(vditor);
+                const parsed = Number(input.value);
+                const next = applyCodeBlockSettings(vditor, {
+                    enabled: current.enabled,
+                    preloadPx: Number.isFinite(parsed) ? parsed : current.preloadPx,
+                });
+                input.value = String(next.preloadPx);
+                return;
+            }
             if (input.dataset.lhValue !== undefined) {
                 const parsed = parseFloat(input.value);
                 const next = isNaN(parsed) ? LINE_HEIGHT_DEFAULT : Math.round(Math.min(LINE_HEIGHT_MAX, Math.max(LINE_HEIGHT_MIN, parsed)) * 10) / 10;

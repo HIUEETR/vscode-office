@@ -45,6 +45,27 @@ const MARKDOWN_SYNC_CONFIG_KEYS = [
 
 type MarkdownSyncConfigKey = typeof MARKDOWN_SYNC_CONFIG_KEYS[number];
 
+const CODE_BLOCK_LAZY_LOAD_STATE_KEY = 'office.markdown.codeBlockLazyLoad';
+const CODE_BLOCK_PRELOAD_PX_STATE_KEY = 'office.markdown.codeBlockPreloadPx';
+const DEFAULT_CODE_BLOCK_LAZY_LOAD = true;
+const DEFAULT_CODE_BLOCK_PRELOAD_PX = 400;
+const MAX_CODE_BLOCK_PRELOAD_PX = 10000;
+
+interface CodeBlockLazySettings {
+    enabled: boolean;
+    preloadPx: number;
+}
+
+const normalizeCodeBlockLazySettings = (settings?: Partial<CodeBlockLazySettings> | null): CodeBlockLazySettings => {
+    const parsedPreloadPx = Number(settings?.preloadPx);
+    return {
+        enabled: settings?.enabled !== false,
+        preloadPx: Number.isFinite(parsedPreloadPx)
+            ? Math.min(MAX_CODE_BLOCK_PRELOAD_PX, Math.max(0, Math.round(parsedPreloadPx)))
+            : DEFAULT_CODE_BLOCK_PRELOAD_PX,
+    };
+};
+
 /**
  * support view and edit office files.
  */
@@ -61,6 +82,13 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             editorTheme: String(configuration.get<string>("editorTheme", "Auto")),
             codeTheme: String(configuration.get<string>("codeMirrorTheme", "Auto")),
         };
+    }
+
+    private getCodeBlockLazySettings(): CodeBlockLazySettings {
+        return normalizeCodeBlockLazySettings({
+            enabled: this.context.globalState.get<boolean>(CODE_BLOCK_LAZY_LOAD_STATE_KEY, DEFAULT_CODE_BLOCK_LAZY_LOAD),
+            preloadPx: this.context.globalState.get<number>(CODE_BLOCK_PRELOAD_PX_STATE_KEY, DEFAULT_CODE_BLOCK_PRELOAD_PX),
+        });
     }
 
     constructor(
@@ -267,6 +295,11 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             if (validThemes.includes(theme)) {
                 Global.updateConfig("mermaidTheme", theme);
             }
+        }).on("updateCodeBlockLazySettings", async (settings: Partial<CodeBlockLazySettings>) => {
+            const normalized = normalizeCodeBlockLazySettings(settings);
+            await this.context.globalState.update(CODE_BLOCK_LAZY_LOAD_STATE_KEY, normalized.enabled);
+            await this.context.globalState.update(CODE_BLOCK_PRELOAD_PX_STATE_KEY, normalized.preloadPx);
+            broadcastToMarkdownWebviews('codeBlockLazySettings', normalized);
         }).on("editMode", (mode: string) => {
             if (mode === "wysiwyg" || mode === "ir") {
                 Global.updateConfig("editMode", mode);
@@ -313,11 +346,6 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         }).on('developerTool', () => {
             vscode.commands.executeCommand('workbench.action.toggleDevTools')
         }).on('openAbout', () => {
-        }).on('openSponsor', () => {
-            vscode.commands.executeCommand(
-                'workbench.extensions.action.showExtensionsWithIds',
-                ['cweijan.vscode-database-client2'],
-            );
         }).on('openExternal', (url: string) => {
             if (url) {
                 vscode.env.openExternal(vscode.Uri.parse(url));
@@ -480,12 +508,15 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
     private getMarkdownWebviewConfig(configuration: vscode.WorkspaceConfiguration) {
         const markdownConfiguration = vscode.workspace.getConfiguration("markdown");
+        const codeBlockLazySettings = this.getCodeBlockLazySettings();
         return {
             editMode: configuration.get<string>("editMode", "wysiwyg"),
             editorTheme: configuration.get<string>("editorTheme", "Auto"),
             codeMirrorTheme: configuration.get<string>("codeMirrorTheme", "Auto"),
             mermaidTheme: configuration.get<string>("mermaidTheme", "Auto"),
             preventMacOptionKey: configuration.get<boolean>("preventMacOptionKey", true),
+            codeBlockLazyLoad: codeBlockLazySettings.enabled,
+            codeBlockPreloadPx: codeBlockLazySettings.preloadPx,
             markdown: {
                 math: {
                     macros: markdownConfiguration.get<Record<string, string>>("math.macros", {}),
